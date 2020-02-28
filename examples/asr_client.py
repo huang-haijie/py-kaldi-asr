@@ -83,7 +83,7 @@ assert wavf.getsampwidth()==2
 
 # process file in 250ms chunks
 
-chunk_frames = 250 * wavf.getframerate() / 1000
+chunk_frames = int(250 * wavf.getframerate() / 1000)
 tot_frames   = wavf.getnframes()
 
 num_frames = 0

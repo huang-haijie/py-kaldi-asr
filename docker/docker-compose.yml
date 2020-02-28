@@ -1,0 +1,15 @@
+version: '3.0'
+services:
+  py-kaldi-asr:
+    image: py-kaldi-asr:latest
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+    ports:
+      - 8301:8301
+    volumes:
+      # Modify the local model dir below
+      - /models/kaldi-generic-en-tdnn_f:/opt/model
+    # entrypoint: bash
+    # stdin_open: true
+    # tty: true

@@ -1,3 +1,22 @@
+# Clone of py-kaldi-asr
+
+This is a clone from https://github.com/gooofy/py-kaldi-asr
+
+Main changes done in this clone:
+- Modify setup.py to search for package `blas` instead of `atlas`.  Because in new version of Ubuntu, after `sudo apt install libatlas-base-dev`, the package installed in pkg-config is `blas` and `blas-atlas`.
+- Change some of to codes to be compatible with Python 3.  E.g., change `asr_server.py` to use Flask instead of BaseHTTPServer.
+- Added docker files to build the image and container using the official Kaldi image (version 5.5) as base. There is an existing docker image at `quay.io/mpuels/docker-py-kaldi-asr`, but it is based on older Kaldi version which does not support factorized model.
+
+If you just want to run it in docker instead of compiling on your local:
+1. `cd docker`
+2. Modify `docker-compose.yml`, in the volumes section, point the local path to your actual model directory.  Assuming your have downloaded the pre-trained model following the original README below.
+3. Run `docker-compose build` to build the image.
+4. Run `docker-compose up` to run the container.
+If everything is successful, the web service should be running on http://localhost:8301 .
+Use the script examples/asr_client.py to test it.
+
+Below is the README from the original repo.
+
 # py-kaldi-asr
 
 Some simple wrappers around kaldi-asr intended to make using kaldi's online nnet3-chain
@@ -77,12 +96,14 @@ kaldi_root=/opt/kaldi
 Name: kaldi-asr
 Description: kaldi-asr speech recognition toolkit
 Version: 5.2
-Requires: atlas
+#Requires: atlas
 Libs: -L${kaldi_root}/tools/openfst/lib -L${kaldi_root}/src/lib -lkaldi-decoder -lkaldi-lat -lkaldi-fstext -lkaldi-hmm -lkaldi-feat -lkaldi-transform -lkaldi-gmm -lkaldi-tree -lkaldi-util -lkaldi-matrix -lkaldi-base -lkaldi-nnet3 -lkaldi-online2 -lkaldi-cudamatrix -lkaldi-ivector -lfst
 Cflags: -I${kaldi_root}/src  -I${kaldi_root}/tools/openfst/include
 ```
 
 make sure `kaldi_root` points to wherever your kaldi checkout lives in your filesystem.
+
+__Note__: [Haijie] Since current version of `libatlas-base-dev` install package `blas` instead of `atlas`, need to remove the dependency of atlas from kaldi-asr.pc.
 
 ATLAS
 -----

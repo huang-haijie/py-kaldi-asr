@@ -1,0 +1,15 @@
+*.swp
+*.swo
+*.pyc
+tmp
+old
+build
+*.log
+TODO
+*.so
+kaldiasr/nnet3.cpp
+kaldiasr/gmm.cpp
+data/atlas.pc
+dist
+py_kaldi_asr.egg-info
+docker

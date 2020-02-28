@@ -44,13 +44,12 @@
 # 
 # curl -i -H "Content-Type: application/json" -X POST \
 #      -d '{"audio": [1,2,3,4], "do_record": true, "do_asr": true, "do_finalize": true}' \
-#      http://localhost:8301/decode
+#      http://localhost/decode
 
 
 import os
 import sys
 import logging
-import traceback
 import json
 import datetime
 import wave
@@ -58,24 +57,26 @@ import errno
 import struct
 
 from time import time
-from optparse import OptionParser
-from setproctitle import setproctitle
-from BaseHTTPServer import BaseHTTPRequestHandler,HTTPServer
+import argparse
 
 from kaldiasr.nnet3 import KaldiNNet3OnlineModel, KaldiNNet3OnlineDecoder
 import numpy as np
 
-DEFAULT_HOST      = 'localhost'
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+
+app = Flask(__name__)
+CORS(app)
+
+DEFAULT_HOST      = '0.0.0.0'
 DEFAULT_PORT      = 8301
 
-DEFAULT_MODEL_DIR = 'data/models/kaldi-nnet3-voxforge-de-latest'
-DEFAULT_MODEL     = 'nnet_tdnn_a'
+DEFAULT_MODEL_DIR = '/opt/model'
+DEFAULT_MODEL     = 'model'
 
-DEFAULT_VF_LOGIN  = 'anonymous'
 DEFAULT_REC_DIR   = 'data/recordings'
 SAMPLE_RATE       = 16000
 
-PROC_TITLE        = 'asr_server'
 
 #
 # globals
@@ -94,129 +95,106 @@ def mkdirs(path):
         if exception.errno != errno.EEXIST:
             raise
 
-class SpeechHandler(BaseHTTPRequestHandler):
-	
-    def do_GET(self):
-        self.send_error(400, 'Invalid request')
+@app.route('/decode', methods=['POST'])
+def SpeechHandler():
 
-    def do_HEAD(self):
-        self._set_headers()
+    global wf, decoder, recordings_dir, audiofn
 
-    def do_POST(self):
+    logging.debug('Received POST.')
 
-        global wf, decoder, vf_login, recordings_dir, audiofn
+    data = request.get_json()
+    
+    # print data
 
-        logging.debug("POST %s" % self.path)
+    audio       = data['audio']
+    do_record   = data['do_record'] 
+    do_asr      = data['do_asr'] 
+    do_finalize = data['do_finalize']
 
-        if self.path=="/decode":
+    hstr        = ''
+    confidence  = 0.0
 
-            data = json.loads(self.rfile.read(int(self.headers.getheader('content-length'))))
+    # FIXME: remove audio = map(lambda x: int(x), audios.split(','))
 
-            # print data
+    if do_record:
 
-            audio       = data['audio']
-            do_record   = data['do_record'] 
-            do_asr      = data['do_asr'] 
-            do_finalize = data['do_finalize']
+        # store recording in WAV format
 
-            hstr        = ''
-            confidence  = 0.0
+        if not wf:
 
-            # FIXME: remove audio = map(lambda x: int(x), audios.split(','))
+            ds = datetime.date.strftime(datetime.date.today(), '%Y%m%d')
+            audiodirfn = '%s/%s-rec/wav' % (recordings_dir, ds)
+            logging.debug('audiodirfn: %s' % audiodirfn)
+            mkdirs(audiodirfn)
 
-            if do_record:
+            cnt = 0
+            while True:
+                cnt += 1
+                audiofn = '%s/de5-%03d.wav' % (audiodirfn, cnt)
+                if not os.path.isfile(audiofn):
+                    break
 
-                # store recording in WAV format
+            logging.debug('audiofn: %s' % audiofn)
 
-                if not wf:
+            # create wav file 
 
-                    ds = datetime.date.strftime(datetime.date.today(), '%Y%m%d')
-                    audiodirfn = '%s/%s-%s-rec/wav' % (recordings_dir, vf_login, ds)
-                    logging.debug('audiodirfn: %s' % audiodirfn)
-                    mkdirs(audiodirfn)
+            wf = wave.open(audiofn, 'wb')
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(SAMPLE_RATE)
 
-                    cnt = 0
-                    while True:
-                        cnt += 1
-                        audiofn = '%s/de5-%03d.wav' % (audiodirfn, cnt)
-                        if not os.path.isfile(audiofn):
-                            break
+        packed_audio = struct.pack('%sh' % len(audio), *audio)
+        wf.writeframes(packed_audio)
 
-                    logging.debug('audiofn: %s' % audiofn)
+        if do_finalize:
 
-                    # create wav file 
+            wf.close()  
+            wf = None
 
-                    wf = wave.open(audiofn, 'wb')
-                    wf.setnchannels(1)
-                    wf.setsampwidth(2)
-                    wf.setframerate(SAMPLE_RATE)
+    else:
+        audiofn = ''
 
-                packed_audio = struct.pack('%sh' % len(audio), *audio)
-                wf.writeframes(packed_audio)
+    if do_asr:
+        decoder.decode(SAMPLE_RATE, np.array(audio, dtype=np.float32), do_finalize)
 
-                if do_finalize:
+        if do_finalize:
 
-                    wf.close()  
-                    wf = None
+            hstr, confidence = decoder.get_decoded_string()
 
-            else:
-                audiofn = ''
+            logging.debug ( "*****************************************************************************")
+            logging.debug ( "**")
+            logging.debug ( "** %9.5f %s" % (confidence, hstr))
+            logging.debug ( "**")
+            logging.debug ( "*****************************************************************************")
 
-            if do_asr:
-                decoder.decode(SAMPLE_RATE, np.array(audio, dtype=np.float32), do_finalize)
+    reply = {'hstr': hstr, 'confidence': confidence, 'audiofn': audiofn}
 
-                if do_finalize:
-
-                    hstr, confidence = decoder.get_decoded_string()
-
-                    logging.debug ( "*****************************************************************************")
-                    logging.debug ( "**")
-                    logging.debug ( "** %9.5f %s" % (confidence, hstr))
-                    logging.debug ( "**")
-                    logging.debug ( "*****************************************************************************")
-
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-
-            reply = {'hstr': hstr, 'confidence': confidence, 'audiofn': audiofn}
-
-            self.wfile.write(json.dumps(reply))
-            return			
-			
-			
+    return jsonify(reply), 200
+    
+        
 if __name__ == '__main__':
 
-    setproctitle (PROC_TITLE)
+    parser = argparse.ArgumentParser("Kaldi ASR Server")
 
-    #
-    # commandline
-    #
-
-    parser = OptionParser("usage: %prog [options] ")
-
-    parser.add_option ("-v", "--verbose", action="store_true", dest="verbose",
+    parser.add_argument ("-v", "--verbose", action="store_true",
                        help="verbose output")
 
-    parser.add_option ("-H", "--host", dest="host", type = "string", default=DEFAULT_HOST,
+    parser.add_argument ("-H", "--host", default=DEFAULT_HOST,
                        help="host, default: %s" % DEFAULT_HOST)
 
-    parser.add_option ("-p", "--port", dest="port", type = "int", default=DEFAULT_PORT,
+    parser.add_argument ("-p", "--port", type = int, default=DEFAULT_PORT,
                        help="port, default: %d" % DEFAULT_PORT)
 
-    parser.add_option ("-d", "--model-dir", dest="model_dir", type = "string", default=DEFAULT_MODEL_DIR,
+    parser.add_argument ("-d", "--model-dir", dest="model_dir", default=DEFAULT_MODEL_DIR,
                        help="kaldi model directory, default: %s" % DEFAULT_MODEL_DIR)
 
-    parser.add_option ("-m", "--model", dest="model", type = "string", default=DEFAULT_MODEL,
+    parser.add_argument ("-m", "--model", default=DEFAULT_MODEL,
                        help="kaldi model, default: %s" % DEFAULT_MODEL)
 
-    parser.add_option ("-r", "--recordings-dir", dest="recordings_dir", type = "string", default=DEFAULT_REC_DIR,
+    parser.add_argument ("-r", "--recordings-dir", dest="recordings_dir", default=DEFAULT_REC_DIR,
                        help="wav recordings directory, default: %s" % DEFAULT_REC_DIR)
 
-    parser.add_option ("-l", "--voxforge-login", dest="vf_login", type = "string", default=DEFAULT_VF_LOGIN,
-                       help="voxforge login (used in recording filename generation), default: %s" % DEFAULT_VF_LOGIN)
-
-    (options, args) = parser.parse_args()
+    options = parser.parse_args()
 
     if options.verbose:
         logging.basicConfig(level=logging.DEBUG)
@@ -225,8 +203,9 @@ if __name__ == '__main__':
 
     kaldi_model_dir = options.model_dir
     kaldi_model     = options.model
+    if kaldi_model == '':
+        kaldi_model = None
 
-    vf_login        = options.vf_login
     recordings_dir  = options.recordings_dir
 
     #
@@ -244,13 +223,8 @@ if __name__ == '__main__':
     #
 
     try:
-        server = HTTPServer((options.host, options.port), SpeechHandler)
+        app.run(options.host, options.port)
         logging.info('listening for HTTP requests on %s:%d' % (options.host, options.port))
-        
-        # wait forever for incoming http requests
-        server.serve_forever()
-
     except KeyboardInterrupt:
-        logging.error('^C received, shutting down the web server')
-        server.socket.close()
+        logging.info('^C received, shutting down the web server')
 
