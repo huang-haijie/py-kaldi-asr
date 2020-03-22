@@ -1,11 +1,11 @@
-# Clone of py-kaldi-asr
+# Fork of py-kaldi-asr
 
-This is a clone from https://github.com/gooofy/py-kaldi-asr
+This is a fork from https://github.com/gooofy/py-kaldi-asr
 
 Main changes done in this clone:
-- Modify setup.py to search for package `blas` instead of `atlas`.  Because in new version of Ubuntu, after `sudo apt install libatlas-base-dev`, the package installed in pkg-config is `blas` and `blas-atlas`.
-- Change some of to codes to be compatible with Python 3.  E.g., change `asr_server.py` to use Flask instead of BaseHTTPServer.
-- Added docker files to build the image and container using the official Kaldi image (version 5.5) as base. There is an existing docker image at `quay.io/mpuels/docker-py-kaldi-asr`, but it is based on older Kaldi version which does not support factorized model.
+- Modified setup.py to search for package `blas` instead of `atlas`.  Because in newer version of Ubuntu, after `sudo apt install libatlas-base-dev`, the package installed in pkg-config is `blas` and `blas-atlas`.
+- Changed some of the codes to be compatible with Python 3.  E.g., changed `asr_server.py` to use Flask instead of BaseHTTPServer.
+- Added docker files to build the image and container using the official Kaldi image (version 5.5) as base. There is an existing docker image at `quay.io/mpuels/docker-py-kaldi-asr`, but it is based on older Kaldi version which does not support factorized TDNN model.
 
 If you just want to run it in docker instead of compiling on your local:
 1. `cd docker`
